@@ -5,7 +5,16 @@ import pytesseract
 import numpy as np
 import random
 
-
+def clean_recognition(text):
+    corrections = {
+        '1': 'I',
+        'l': 'I',
+        '|': 'I',
+        '0': 'O',
+        'p': 'P',
+    }
+    text = text.strip()
+    return corrections.get(text, text)
 
 def solution(board: PIL.Image) -> str:
     
@@ -13,10 +22,11 @@ def solution(board: PIL.Image) -> str:
     __known_pattern = np.zeros(5, dtype=str)
     known_letters = [] 
     false_letters = [] 
+    played_words = []
     
-    image = wordy.get_board_state()
+    image = board
     print(type(image))
-    image.show(image)
+    image.show()
     
     square_size = 60
     line_width = 5
@@ -26,6 +36,7 @@ def solution(board: PIL.Image) -> str:
     results = []
     
     for row in range(num_rows):
+        row_word = ""
         for col in range(num_columns):
             x = col * (square_size + line_width)
             y = row * square_size
@@ -34,27 +45,41 @@ def solution(board: PIL.Image) -> str:
             
             color = cell.getpixel((5, 5))
             hex_color = '#{:02x}{:02x}{:02x}'.format(color[0], color[1], color[2])
-            
-            cell_gray = cell.convert("L")
-            
+            if hex_color == '#000000':
+                continue
+
+            cell_gray = cell.convert("L")            
+
             enhancer = ImageEnhance.Contrast(cell_gray)
-            enhanced_cell = enhancer.enhance(1.5)
+            enhanced_cell = enhancer.enhance(2.0)
             
-            resized_cell = enhanced_cell.resize((square_size * 3, square_size * 3), Image.LANCZOS)
-            
-            config = "--psm 10 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            # Add sharpness enhancement
+            sharpness_enhancer = ImageEnhance.Sharpness(enhanced_cell)
+            enhanced_cell = sharpness_enhancer.enhance(3.0)
+
+            resized_cell = enhanced_cell.resize((square_size * 2, square_size * 2), Image.LANCZOS)
+
+            config = "--psm 10 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ|1l0p"
+            # config2 = "--psm 10"
             
             recognized_text = pytesseract.image_to_string(resized_cell, config=config).strip()
-            
+            # recognized_text2 = pytesseract.image_to_string(resized_cell, config=config2).strip()
+
+            result = clean_recognition(recognized_text)
+            # print( "recognized text2", recognized_text2)
+
             results.append({
                 "row": row + 1,
                 "column": col + 1,
-                "letter": recognized_text,
+                "letter": result,
                 "color": hex_color
             })
             
     
-            print(f"Row {row + 1}, Column {col + 1} - Color: {hex_color}. Recognized Letter: {recognized_text}")
+            print(f"Row {row + 1}, Column {col + 1} - Color: {hex_color}. Recognized Letter: {result}")
+            row_word = row_word + result
+            if col == 4:
+                played_words.append(row_word)
     print("\nRaw results:")        
     print(results)
     print("\nCleaned results:")
@@ -102,21 +127,39 @@ def solution(board: PIL.Image) -> str:
     print(type(words_file))
     with open(words_file, "r") as file:
             
-        word_list: list[str] = [line.strip().upper() for line in file.readlines()]
+        word_list: list[str] = list(set([line.strip().upper() for line in file.readlines()]))
     print("\nGanze Liste:", word_list)
     
     filtered_words = []
     
     if any(__known_pattern):
         filtered_words = [
-            word for word in word_list
-            if all(__known_pattern[i] == '' or word[i] == __known_pattern[i] for i in range(5))
-        ]
+            word for word in word_list if all(__known_pattern[i] == '' or word[i] == __known_pattern[i] for i in range(5))
+            ]
+        print("\n Words with known pattern:", filtered_words)
+    if any(filtered_words):
+        print("\n played words:", played_words)
+        filtered_words = [
+            word for word in filtered_words
+            if word not in played_words
+            ]
+        print("\n List without played words:", filtered_words)
+    if any(known_letters):
+        filtered_words = [
+            word for word in filtered_words
+            if all(letter in word for letter in known_letters)
+            ]
+        print("\n Filtered words:", filtered_words)
+            
      
-    guess_list = []
+    guess_list = [word for word in word_list]
     if not filtered_words:
-        known_letters = np.append(known_letters, ['P', 'I'])
-        guess_list = [word for word in word_list if any(letter in word for letter in known_letters)]
+        print("===No filtered words===")
+        # known_letters = np.append(known_letters, ['P', 'I']) # This is wrong because we don't know if there was a P or an I in the last guess
+        print("Known letters:", known_letters)
+        guess_list = [word for word in word_list
+                     if (all(letter in word for letter in known_letters)
+                     and word not in played_words)]
         
     
         
